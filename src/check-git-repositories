@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+#
+# check-git-repositories
+#
+# End-of-day (or anytime) scanner for a tree of git repositories. Walks
+# START_DIR, finds every .git marker, and reports whether each repo is fully
+# clean and synced with its upstream — so nothing uncommitted, unpushed,
+# stashed, or unsynced is overlooked.
+#
+# Per repo a single compact status line is printed:
+#   [ OK ] [ DIRTY ] [ AHEAD ] [ BEHIND ] [ DIVERGED ] [ NO-UP ] [ STASH ] [ ERROR ]
+# A repo is OK only when the working tree is clean, there are no stashes, an
+# upstream exists, and the branch is not ahead/behind/diverged.
+#
+# Ignore flags hide matching lines in the list but never zero out summary
+# counts. --ignore-no-up also treats NO-UP as acceptable for the exit code.
+# The full scan always finishes before exiting (never aborts on first failure).
+#
+# Exit codes: 0 = all acceptable, 1 = needs attention / errors, 2 = bad CLI.
+# Drop into ~/bin; requires only bash, find, and git.
+#
+
+VERSION="0.0.0"
+
+set -uo pipefail
+
+VERBOSE=0
+IGNORE_CLEAN=0
+IGNORE_NO_UP=0
+DO_FETCH=0
+COLOR_MODE=auto
+START_DIR=.
+
+# Print CLI usage to stdout.
+usage() {
+  cat <<'EOF'
+Usage: check-git-repositories [options] [START_DIR]
+
+Scan START_DIR (default: .) for git repositories and report any that are
+not fully clean and synced with their upstream.
+
+Options:
+  -v, --verbose         Show per-file dirty detail under DIRTY repos
+      --ignore-clean    Hide [ OK ] lines (still counted in summary)
+      --ignore-no-up    Hide [ NO-UP ] lines (still counted; ignored for exit)
+      --fetch           git fetch --quiet before sync checks
+      --color=WHEN      auto (default), always, or never
+  -V, --version         Show version and exit
+  -h, --help            Show this help and exit
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -V|--version)
+      printf 'check-git-repositories %s\n' "$VERSION"
+      exit 0
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    --ignore-clean)
+      IGNORE_CLEAN=1
+      shift
+      ;;
+    --ignore-no-up)
+      IGNORE_NO_UP=1
+      shift
+      ;;
+    --fetch)
+      DO_FETCH=1
+      shift
+      ;;
+    --color=auto|--color=always|--color=never)
+      COLOR_MODE="${1#--color=}"
+      shift
+      ;;
+    --color)
+      if [[ $# -lt 2 || ! "$2" =~ ^(auto|always|never)$ ]]; then
+        printf 'error: --color requires auto, always, or never\n' >&2
+        printf 'Try --help for usage.\n' >&2
+        exit 2
+      fi
+      COLOR_MODE="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      printf 'error: unknown option: %s\n' "$1" >&2
+      printf 'Try --help for usage.\n' >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -gt 1 ]]; then
+  printf 'error: too many arguments\n' >&2
+  printf 'Try --help for usage.\n' >&2
+  exit 2
+fi
+
+if [[ $# -eq 1 ]]; then
+  START_DIR="$1"
+fi
+
+if [[ ! -d "$START_DIR" ]]; then
+  printf 'error: START_DIR is not a directory: %s\n' "$START_DIR" >&2
+  exit 2
+fi
+
+COLOR_ENABLED=0
+if [[ -n "${NO_COLOR:-}" ]]; then
+  COLOR_ENABLED=0
+elif [[ "$COLOR_MODE" == always ]]; then
+  COLOR_ENABLED=1
+elif [[ "$COLOR_MODE" == auto && -t 1 ]]; then
+  COLOR_ENABLED=1
+fi
+
+c_reset="" c_green="" c_yellow="" c_cyan="" c_red=""
+if ((COLOR_ENABLED)); then
+  c_reset=$'\033[0m'
+  c_green=$'\033[32m'
+  c_yellow=$'\033[33m'
+  c_cyan=$'\033[36m'
+  c_red=$'\033[31m'
+fi
+
+# Emit the ANSI colour sequence for a primary status label (or empty if colour off).
+# Args: $1 = status label (OK, DIRTY, AHEAD, …)
+status_color() {
+  case "$1" in
+    OK) printf '%s' "$c_green" ;;
+    DIRTY|STASH) printf '%s' "$c_yellow" ;;
+    AHEAD|BEHIND|DIVERGED|NO-UP) printf '%s' "$c_cyan" ;;
+    ERROR) printf '%s' "$c_red" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+# Format a status tag as "[ LABEL ]" with one space inside each bracket,
+# right-padded to the width of "[ DIVERGED ]" so paths align in the listing.
+# Args: $1 = status label
+format_status_tag() {
+  printf '%-12s' "[ $1 ]"
+}
+
+# Format a filesystem path for display: ~/… when under $HOME, otherwise the
+# absolute OS path. Relative inputs (./…, ../…) are resolved first.
+# Args: $1 = path (relative or absolute); prints the display form to stdout.
+display_path() {
+  local path="$1"
+  local abs home
+
+  if [[ -d "$path" ]]; then
+    abs="$(cd "$path" && pwd)" || abs="$path"
+  elif [[ -e "$path" ]]; then
+    abs="$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" || abs="$path"
+  else
+    abs="$path"
+  fi
+
+  home="${HOME%/}"
+  if [[ "$abs" == "$home" ]]; then
+    printf '%s' '~'
+  elif [[ "$abs" == "$home"/* ]]; then
+    printf '%s/%s' '~' "${abs#"$home"/}"
+  else
+    printf '%s' "$abs"
+  fi
+}
+
+# Print indented per-file porcelain detail (untracked / conflict / staged / unstaged).
+# Used when --verbose is set and the repo has a dirty working tree.
+# Args: $1 = raw output of `git status --porcelain=v1`
+print_porcelain_details() {
+  local status="$1"
+  local line index_status worktree_status filename
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+
+    index_status="${line:0:1}"
+    worktree_status="${line:1:1}"
+    filename="${line:3}"
+
+    if [[ "$index_status$worktree_status" == "??" ]]; then
+      printf '       [untracked]  %s\n' "$filename"
+      continue
+    fi
+
+    if [[ "$index_status" == "U" ||
+          "$worktree_status" == "U" ||
+          "$index_status$worktree_status" == "AA" ||
+          "$index_status$worktree_status" == "DD" ]]; then
+      printf '       %s[conflict]%s   %s\n' "$c_red" "$c_reset" "$filename"
+      continue
+    fi
+
+    if [[ "$index_status" != " " ]]; then
+      printf '       [staged:%s]   %s\n' "$index_status" "$filename"
+    fi
+
+    if [[ "$worktree_status" != " " ]]; then
+      printf '       [unstaged:%s] %s\n' "$worktree_status" "$filename"
+    fi
+  done <<< "$status"
+}
+
+# Count non-empty porcelain status lines (one entry per path shown by git).
+# Args: $1 = raw porcelain status; prints the integer count to stdout.
+count_porcelain_files() {
+  local status="$1"
+  local n=0 line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && ((n += 1))
+  done <<< "$status"
+  printf '%d' "$n"
+}
+
+# Summary counters — always updated from the true primary status, even when
+# ignore flags suppress the corresponding list line.
+repository_count=0
+ok_count=0
+dirty_count=0
+ahead_count=0
+behind_count=0
+diverged_count=0
+noup_count=0
+stash_repo_count=0
+error_count=0
+
+# Increment the summary counter for a primary status label.
+# Args: $1 = status label
+record_status() {
+  case "$1" in
+    OK) ((ok_count += 1)) ;;
+    DIRTY) ((dirty_count += 1)) ;;
+    AHEAD) ((ahead_count += 1)) ;;
+    BEHIND) ((behind_count += 1)) ;;
+    DIVERGED) ((diverged_count += 1)) ;;
+    NO-UP) ((noup_count += 1)) ;;
+    STASH) ((stash_repo_count += 1)) ;;
+    ERROR) ((error_count += 1)) ;;
+  esac
+}
+
+# Print an [ ERROR ] line for a repository and record it in the summary.
+# Args: $1 = repository path
+report_error() {
+  local repository="$1"
+  local color tag
+  color="$(status_color ERROR)"
+  tag="$(format_status_tag ERROR)"
+  printf '%s%s%s %s\n' "$color" "$tag" "$c_reset" "$(display_path "$repository")"
+  record_status ERROR
+}
+
+# Inspect one git repository: optional fetch, working tree, stash, upstream
+# sync; choose a primary status (priority ERROR > DIRTY > DIVERGED > AHEAD >
+# BEHIND > NO-UP > STASH > OK); update summary counts; print a compact line
+# unless hidden by an ignore flag; with --verbose, print porcelain detail
+# under dirty repos.
+# Args: $1 = repository path (directory containing .git)
+check_repository() {
+  local repository="$1"
+  local status="" stash_list="" ahead=0 behind=0
+  local has_upstream=1
+  local primary="" file_count=0 stash_count=0
+  local hints="" color tag
+
+  ((repository_count += 1))
+
+  if ((DO_FETCH)); then
+    if ! git -C "$repository" fetch --quiet 2>/dev/null; then
+      report_error "$repository"
+      return
+    fi
+  fi
+
+  if ! status="$(git -C "$repository" status --porcelain=v1 2>/dev/null)"; then
+    report_error "$repository"
+    return
+  fi
+
+  if ! stash_list="$(git -C "$repository" stash list 2>/dev/null)"; then
+    report_error "$repository"
+    return
+  fi
+  if [[ -n "$stash_list" ]]; then
+    stash_count="$(printf '%s\n' "$stash_list" | grep -c . || true)"
+  fi
+
+  if git -C "$repository" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+    local lr
+    lr="$(git -C "$repository" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null)" || {
+      report_error "$repository"
+      return
+    }
+    behind="${lr%%	*}"
+    ahead="${lr##*	}"
+  else
+    has_upstream=0
+  fi
+
+  file_count="$(count_porcelain_files "$status")"
+
+  # Determine primary status
+  if [[ "$file_count" -gt 0 ]]; then
+    primary=DIRTY
+  elif ((ahead > 0 && behind > 0)); then
+    primary=DIVERGED
+  elif ((ahead > 0)); then
+    primary=AHEAD
+  elif ((behind > 0)); then
+    primary=BEHIND
+  elif ((has_upstream == 0)); then
+    primary=NO-UP
+  elif ((stash_count > 0)); then
+    primary=STASH
+  else
+    primary=OK
+  fi
+
+  # Secondary hints (skip fields already implied by primary where redundant)
+  hints=""
+  if [[ "$primary" != DIRTY && "$file_count" -gt 0 ]]; then
+    hints+=" (${file_count} files)"
+  fi
+  if [[ "$primary" == DIRTY ]]; then
+    hints+=" (${file_count} files)"
+  fi
+  if [[ "$primary" != AHEAD && "$primary" != DIVERGED && "$ahead" -gt 0 ]]; then
+    hints+=" ↑${ahead}"
+  fi
+  if [[ "$primary" != BEHIND && "$primary" != DIVERGED && "$behind" -gt 0 ]]; then
+    hints+=" ↓${behind}"
+  fi
+  if [[ "$primary" == AHEAD ]]; then
+    hints+=" ↑${ahead}"
+  fi
+  if [[ "$primary" == BEHIND ]]; then
+    hints+=" ↓${behind}"
+  fi
+  if [[ "$primary" == DIVERGED ]]; then
+    hints+=" ↑${ahead} ↓${behind}"
+  fi
+  if ((has_upstream == 0 && !IGNORE_NO_UP)); then
+    hints+=" (no upstream)"
+  fi
+  if [[ "$primary" != STASH && "$stash_count" -gt 0 ]]; then
+    hints+=" stash:${stash_count}"
+  fi
+  if [[ "$primary" == STASH ]]; then
+    hints+=" (${stash_count} stashes)"
+  fi
+
+  record_status "$primary"
+
+  # Ignore flags hide lines only — summary counts always reflect true status
+  if [[ "$primary" == OK ]] && ((IGNORE_CLEAN)); then
+    return
+  fi
+  if [[ "$primary" == NO-UP ]] && ((IGNORE_NO_UP)); then
+    return
+  fi
+
+  color="$(status_color "$primary")"
+  tag="$(format_status_tag "$primary")"
+  printf '%s%s%s %s%s\n' "$color" "$tag" "$c_reset" "$(display_path "$repository")" "$hints"
+
+  if ((VERBOSE)) && [[ "$file_count" -gt 0 ]]; then
+    print_porcelain_details "$status"
+  fi
+}
+
+# --- main: discover repos, check each, print summary, exit ---
+
+printf 'Searching for Git repositories beneath: %s\n\n' \
+  "$(display_path "$START_DIR")"
+
+# Find .git as a directory or file (worktrees); prune so we do not descend
+# into the gitdir. </dev/null on check_repository keeps git from consuming
+# the find stream on stdin.
+while IFS= read -r -d '' git_marker; do
+  check_repository "$(dirname "$git_marker")" </dev/null
+done < <(
+  find "$START_DIR" \
+    \( -type d -o -type f \) \
+    -name .git \
+    -print0 \
+    -prune 2>/dev/null
+)
+
+printf '\n%s\n' '------------------------------------------------------------'
+printf 'Repositories checked: %d\n' "$repository_count"
+printf 'OK:                   %d\n' "$ok_count"
+printf 'DIRTY:                %d\n' "$dirty_count"
+printf 'AHEAD:                %d\n' "$ahead_count"
+printf 'BEHIND:               %d\n' "$behind_count"
+printf 'DIVERGED:             %d\n' "$diverged_count"
+printf 'NO-UP:                %d\n' "$noup_count"
+printf 'STASH:                %d\n' "$stash_repo_count"
+printf 'ERROR:                %d\n' "$error_count"
+
+# Ignore flags hide list lines only; summary counts stay accurate.
+# --ignore-no-up also treats NO-UP as acceptable for the exit status.
+acceptable_count=$ok_count
+if ((IGNORE_NO_UP)); then
+  ((acceptable_count += noup_count))
+fi
+
+if ((acceptable_count < repository_count)); then
+  exit 1
+fi
+
+exit 0
