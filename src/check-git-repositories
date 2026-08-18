@@ -20,7 +20,7 @@
 # Drop into ~/bin; requires only bash, find, and git.
 #
 
-VERSION="0.0.0"
+VERSION="0.1.0"
 
 set -uo pipefail
 
