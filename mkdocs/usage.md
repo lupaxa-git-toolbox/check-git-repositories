@@ -2,7 +2,7 @@
 
 Day-to-day ways to run `check-git-repositories`.
 
-## Basic scan
+## Basic Scan
 
 Scan the current directory tree:
 
@@ -16,7 +16,7 @@ Scan a specific root:
 check-git-repositories ~/Desktop/GitMaster
 ```
 
-## Compact listing vs verbose detail
+## Compact Listing vs Verbose Detail
 
 By default each repo is one line. Add `-v` / `--verbose` to print per-file
 dirty detail under repositories with a dirty working tree:
@@ -25,7 +25,7 @@ dirty detail under repositories with a dirty working tree:
 check-git-repositories -v ~/Desktop/GitMaster
 ```
 
-## Hide noise with ignore flags
+## Hide Noise with Ignore Flags
 
 Ignore flags **hide list lines only**. Summary counts always reflect the true
 status of every repository.
@@ -41,7 +41,7 @@ Example — show only repos that still need work, while keeping accurate totals:
 check-git-repositories --ignore-clean --ignore-no-up ~/Desktop/GitMaster
 ```
 
-## Optional fetch
+## Optional Fetch
 
 By default ahead/behind use local remote-tracking refs (fast, no network).
 Pass `--fetch` to run `git fetch --quiet` in each repo before sync checks:
@@ -54,7 +54,7 @@ check-git-repositories --fetch ~/Desktop/GitMaster
     `--fetch` contacts remotes for every repository and is slower. Fetch
     failures are reported as `[ ERROR ]` for that repo; the scan continues.
 
-## End-of-day checklist
+## End-of-Day Checklist
 
 1.   Run a full scan on your git workspace root.
 2.   Fix or push anything flagged (`DIRTY`, `AHEAD`, `BEHIND`, `DIVERGED`, …).

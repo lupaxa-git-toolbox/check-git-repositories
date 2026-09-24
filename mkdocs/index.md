@@ -1,4 +1,4 @@
-# check-git-repositories
+# Check Git Repositories
 
 A portable bash tool for scanning a directory tree of git repositories and
 reporting anything that is not **fully clean and synced with its upstream**.
@@ -6,7 +6,7 @@ reporting anything that is not **fully clean and synced with its upstream**.
 Use it at the end of the day (or anytime) so uncommitted work, unpushed
 commits, stashes, missing upstreams, and sync drift are not overlooked.
 
-## What it checks
+## What it Checks?
 
 A repository is **OK** only when all of these hold:
 
@@ -15,10 +15,19 @@ A repository is **OK** only when all of these hold:
 - Current branch has an upstream
 - Branch is not ahead, behind, or diverged from that upstream
 
-Anything else is flagged with a compact status line such as `[ DIRTY ]`,
-`[ AHEAD ]`, or `[ NO-UP ]`.
+Anything else is flagged with one of these prefixes:
 
-## Why use it
+| Prefix         | Meaning                                    |
+| :------------- | :----------------------------------------- |
+| `[ ERROR ]`    | A git command failed                       |
+| `[ DIRTY ]`    | Working tree has changes                   |
+| `[ DIVERGED ]` | Ahead and behind upstream                  |
+| `[ AHEAD ]`    | Local commits are not on upstream          |
+| `[ BEHIND ]`   | Upstream has commits that are not local    |
+| `[ NO-UP ]`    | No upstream is configured                  |
+| `[ STASH ]`    | Clean and synced, but a stash entry exists |
+
+## Why Use It?
 
 | Need                      | How this helps                                               |
 | :------------------------ | :----------------------------------------------------------- |
@@ -26,10 +35,3 @@ Anything else is flagged with a compact status line such as `[ DIRTY ]`,
 | End-of-day confidence     | Exit code `1` when anything still needs attention            |
 | Scriptable                | Quiet colour when piped; exit `0` / `1` / `2` for automation |
 | No install stack          | Single bash script — drop into `~/bin`                       |
-
-## Next steps
-
-- [Getting started](getting-started.md) — install and first run
-- [Usage](usage.md) — day-to-day workflows and ignore flags
-- [Reference](reference.md) — options, statuses, and exit codes
-- [Examples](examples.md) — sample output and common scenarios

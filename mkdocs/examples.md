@@ -2,7 +2,7 @@
 
 Sample output and common scenarios for `check-git-repositories`.
 
-## Typical listing
+## Typical Listing
 
 ```text
 Searching for Git repositories beneath: /Users/you/Desktop/GitMaster
@@ -26,7 +26,7 @@ ERROR:                0
 
 Exit code for this run: `1`.
 
-## Hide OK and NO-UP lines
+## Hide OK and NO-UP Lines
 
 ```bash
 check-git-repositories --ignore-clean --ignore-no-up ~/Desktop/GitMaster
@@ -53,7 +53,7 @@ ERROR:                0
 With only dirty/ahead remaining as failures, exit is still `1`. If the tree
 were only `OK` + `NO-UP`, exit would be `0` when `--ignore-no-up` is set.
 
-## Verbose dirty detail
+## Verbose Dirty Detail
 
 ```bash
 check-git-repositories -v ~/path/to/dirty-repo
@@ -65,7 +65,7 @@ check-git-repositories -v ~/path/to/dirty-repo
        [untracked]  scratch.tmp
 ```
 
-## Diverged branch
+## Diverged Branch
 
 ```text
 [ DIVERGED ] /path/to/repo ↑1 ↓2
@@ -73,7 +73,7 @@ check-git-repositories -v ~/path/to/dirty-repo
 
 Local has one unique commit; upstream has two the local branch lacks.
 
-## Fetch before sync check
+## Fetch Before Sync Check
 
 ```bash
 check-git-repositories --fetch ~/Desktop/GitMaster
@@ -95,7 +95,7 @@ check-git-repositories --color=never --ignore-clean "$HOME/Desktop/GitMaster"
 
 Pipe-friendly: `--color=never` (or a non-TTY pipe) keeps ANSI codes out of logs.
 
-## Admonitions used in these docs
+## Admonitions Used in These Docs
 
 !!! tip "Tip"
     Prefer a fixed workspace root in an alias so the command is one word.

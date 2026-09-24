@@ -27,7 +27,7 @@ Unknown options and invalid `--color` values exit `2`.
 Environment: if `NO_COLOR` is set (non-empty), colour is disabled even with
 `--color=always`.
 
-## Status labels
+## Status Labels
 
 Each repository gets one **primary** status (highest applicable wins):
 
@@ -51,7 +51,7 @@ Secondary issues may appear as hints on the same line, for example:
 Tag formatting: `[ LABEL ]` with one space inside each bracket, right-padded
 so paths align (width of `[ DIVERGED ]`).
 
-## Colour (when enabled)
+## Colour (When Enabled)
 
 | Status                                 | Colour |
 | :------------------------------------- | :----- |
@@ -80,7 +80,7 @@ ERROR:                N
 Counts always sum to `Repositories checked` and always reflect true primary
 statuses — ignore flags do not zero them out.
 
-## Exit codes
+## Exit Codes
 
 | Code | When                                                                       |
 | :--- | :------------------------------------------------------------------------- |

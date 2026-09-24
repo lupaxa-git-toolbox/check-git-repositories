@@ -1,4 +1,4 @@
-# Getting started
+# Getting Started
 
 Install the script somewhere on your `PATH`, then point it at a directory that
 contains one or more git repositories.
@@ -40,7 +40,7 @@ Clone the repository (or copy the script) and place it on your `PATH`:
     ./src/check-git-repositories --help
     ```
 
-## First run
+## First Run
 
 ```bash
 check-git-repositories --help
@@ -56,7 +56,7 @@ Colour is **auto** by default: enabled when stdout is a terminal, disabled when
 piped. Override with `--color=always` or `--color=never`. If `NO_COLOR` is set
 in the environment, colour stays off.
 
-## Exit codes
+## Exit Codes
 
 | Code | Meaning                                             |
 | :--- | :-------------------------------------------------- |
