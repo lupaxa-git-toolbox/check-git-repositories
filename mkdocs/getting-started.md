@@ -14,7 +14,15 @@ only needed if you build or serve these docs locally.
 
 ## Install
 
-Clone the repository (or copy the script) and place it on your `PATH`:
+With Homebrew, or clone the repository and place the script on your `PATH`:
+
+=== "Homebrew"
+
+    ```bash
+    brew tap the-lupaxa-project/tap
+    brew trust the-lupaxa-project/tap
+    brew install check-git-repositories
+    ```
 
 === "Copy into ~/bin"
 

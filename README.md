@@ -10,10 +10,20 @@ Scan a directory tree for git repositories and report anything that is not
 **fully clean and synced with its upstream** — so uncommitted work, unpushed
 commits, stashes, and sync drift are not overlooked at the end of the day.
 
-A single portable bash script. Drop it in `~/bin`. Requires only `bash`,
-`find`, and `git`.
+A single portable bash script. Install it with Homebrew, or drop it in
+`~/bin`. Requires only `bash`, `find`, and `git`.
 
 ## Quick Start
+
+With Homebrew:
+
+```bash
+brew tap the-lupaxa-project/tap
+brew trust the-lupaxa-project/tap
+brew install check-git-repositories
+```
+
+Or copy the script onto your `PATH`:
 
 ```bash
 mkdir -p ~/bin

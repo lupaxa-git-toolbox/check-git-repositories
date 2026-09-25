@@ -34,4 +34,4 @@ Anything else is flagged with one of these prefixes:
 | Many repos under one tree | Discovers every `.git` marker beneath a start directory      |
 | End-of-day confidence     | Exit code `1` when anything still needs attention            |
 | Scriptable                | Quiet colour when piped; exit `0` / `1` / `2` for automation |
-| No install stack          | Single bash script — drop into `~/bin`                       |
+| No install stack          | Single bash script — Homebrew or `~/bin`                     |
